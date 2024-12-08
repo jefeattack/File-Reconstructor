@@ -1,7 +1,20 @@
-import subprocess
-from collections import Counter
-import math
 import os
+import subprocess
+import math
+import csv
+import shutil
+from collections import Counter
+
+# Define entropy ranges and corresponding target folders
+RANGES_AND_FOLDERS = {
+    (2.48, 3.32): "adobo",
+    (4.14, 4.99): "doctor",
+    (7.46, 8.39): "jeepy"
+}
+
+# Ensure target folders exist
+for folder in RANGES_AND_FOLDERS.values():
+    os.makedirs(folder, exist_ok=True)
 
 def calculate_entropy(data):
     """Calculate the Shannon entropy of data."""
@@ -19,24 +32,39 @@ def get_hex_data(file_path):
     data = bytes.fromhex(hex_data)
     return data
 
-def entropy_from_file(file_path):
-    """Calculate entropy of a file based on its xxd output."""
-    hex_data = get_hex_data(file_path)
-    return calculate_entropy(hex_data)
+def move_file_based_on_entropy(file_path, entropy):
+    """Move file to the appropriate folder based on its entropy."""
+    for (low, high), folder in RANGES_AND_FOLDERS.items():
+        if low <= entropy <= high:
+            shutil.move(file_path, os.path.join(folder, os.path.basename(file_path)))
+            print(f"Moved {file_path} to {folder} (Entropy={round(entropy, 4)})")
+            return  # Exit after moving to prevent multiple moves
 
-def calculate_entropy_for_folder(folder_path, output_file):
-    """Calculate entropy for all files in a folder and save the results."""
-    with open(output_file, 'w') as f:
-        f.write("Filename,Entropy\n")  # Header for CSV output
+def analyze_files_in_folder(folder_path, output_file):
+    """Analyze all files in a folder, output entropy results to CSV, and move based on entropy."""
+    with open(output_file, 'w', newline='') as csvfile:
+        fieldnames = ['Filename', 'Entropy']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        
         for filename in os.listdir(folder_path):
             file_path = os.path.join(folder_path, filename)
-            if os.path.isfile(file_path):  # Only process files, not subdirectories
-                entropy = entropy_from_file(file_path)
-                f.write(f"{filename},{entropy:.4f}\n")
-                print(f"Processed {filename}: Entropy = {entropy:.4f}")
+            if os.path.isfile(file_path):
+                # Calculate entropy for the file
+                data = get_hex_data(file_path)
+                entropy = calculate_entropy(data)
+                
+                # Write the result to CSV
+                writer.writerow({
+                    'Filename': filename,
+                    'Entropy': round(entropy, 4)
+                })
+                
+                # Move file if entropy falls within specified ranges
+                move_file_based_on_entropy(file_path, entropy)
 
 # Usage
-folder_path = '.'  # Current directory
+folder_path = '.'  # Set to the directory containing the files
 output_file = 'entropy_results.csv'
-calculate_entropy_for_folder(folder_path, output_file)
+analyze_files_in_folder(folder_path, output_file)
 print(f"Entropy results saved to {output_file}")
